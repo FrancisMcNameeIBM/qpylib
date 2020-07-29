@@ -49,6 +49,12 @@ def reset_globals():
         with patch('qpylib.app_qpylib.Q_CACHED_MANIFEST', None):
             yield
 
+@pytest.fixture(scope='function')
+def set_sdk():
+    os.environ['QRADAR_APPFW_SDK'] = 'no'
+    yield
+    del os.environ['QRADAR_APPFW_SDK']
+
 # pylint: disable=protected-access
 def verify_log_file_content(log_path, expected_lines, not_expected_lines=[]): # pylint: disable=dangerous-default-value
     with open(log_path) as log_file:
@@ -195,3 +201,33 @@ def test_set_log_level_with_bad_level_uses_info(set_console_ip, debug_threshold,
             {'level': 'CRITICAL', 'text': 'hello critical'},
             {'level': 'ERROR', 'text': 'hello exception'}],
                                 not_expected_lines=[{'level': 'DEBUG', 'text': 'hello debug'}])
+
+def test_syslog_format(set_console_ip, info_threshold, tmpdir):
+
+    # QLOGGER = logging.getLogger('com.ibm.applicationLogger')
+    # QLOGGER.setLevel(log_qpylib.default_log_level())
+
+    # handler = RotatingFileHandler(_log_file_location(), maxBytes=2*1024*1024, backupCount=5)
+    # handler.setFormatter(logging.Formatter(APP_FILE_LOG_FORMAT))
+    # QLOGGER.addHandler(handler)
+
+    log_path = os.path.join(tmpdir.strpath, 'app.log')
+    with patch('qpylib.log_qpylib._log_file_location') as mock_log_location:
+        mock_log_location.return_value = log_path
+
+        qpylib.create_log()
+
+        test_syslog_handler = logging.handlers.RotatingFileHandler(log_path, maxBytes=2*1024*1024, backupCount=5)
+        test_syslog_handler.setFormatter(logging.Formatter(log_qpylib.SYSLOG_APP_LOG_FORMAT))
+
+        QLOGGER = logging.getLogger('com.ibm.applicationLogger')
+        QLOGGER.addHandler(test_syslog_handler)
+
+        qpylib.log('hello', 'BAD')
+
+        QLOGGER.removeHandler(test_syslog_handler)
+
+        print("-----\n" + open(log_path, 'r').read() + "\n-----")
+        verify_log_file_content(log_path, [{'level': 'INFO', 'text': 'hello'}])
+
+        assert 1 == 2
